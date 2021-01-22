@@ -271,28 +271,28 @@ impl PlayerWidget {
                     .set_from_icon_name(Some("media-playlist-consecutive-symbolic"), gtk::IconSize::Menu);
                 loops.none.set_active(true);
                 mpris.set_loop_status(LoopStatus::None);
-            }
+            },
             LoopsState::TRACK => {
                 loops
                     .image
                     .set_from_icon_name(Some("media-playlist-repeat-song-symbolic"), gtk::IconSize::Menu);
                 loops.track.set_active(true);
                 mpris.set_loop_status(LoopStatus::Track);
-            }
+            },
             LoopsState::PLAYLIST => {
                 loops
                     .image
                     .set_from_icon_name(Some("media-playlist-repeat-symbolic"), gtk::IconSize::Menu);
                 loops.playlist.set_active(true);
                 mpris.set_loop_status(LoopStatus::Playlist);
-            }
+            },
             LoopsState::SHUFFLE => {
                 loops
                     .image
                     .set_from_icon_name(Some("media-playlist-shuffle-symbolic"), gtk::IconSize::Menu);
                 loops.shuffle.set_active(true);
                 mpris.property_changed("Shuffle".to_string(), true);
-            }
+            },
         }
         let info = PlayerInfo {
             mpris,
@@ -393,7 +393,30 @@ impl PlayerWidget {
             width = 140;
             high = 140;
         }
+        let data = self.music_data.clone();
         task::spawn(async move {
+            let mut song_info = song_info;
+            if song_info.song_url == "" {
+                let mut data = data.lock().await;
+                let url = match data.songs_url(&[song_info.id], 320).await {
+                    Ok(v) => v,
+                    Err(e) => {
+                        warn!("获取<<{}>>[id:{}]的播放链接失败, {}", song_info.name, song_info.id, e);
+                        Vec::new()
+                    },
+                };
+                if !url.is_empty() {
+                    song_info.song_url = url[0].url.to_string();
+                }
+            }
+            if song_info.song_url == "" {
+                warn!("未找到<<{}>>[id:{}]的播放链接", song_info.name, song_info.id);
+                sender
+                    .send(Action::ShowNotice("播放失败!(版权或VIP限制)".to_owned()))
+                    .unwrap();
+                sender.send(Action::PlayNext).unwrap();
+                return;
+            }
             // 下载歌词
             if lyrics {
                 let mut data = MusicData::new().await;
@@ -467,7 +490,7 @@ impl PlayerWidget {
         match *self.player_types.borrow() {
             PlayerTypes::Fm => {
                 self.sender.send(Action::RefreshMineFmPause).unwrap();
-            }
+            },
             _ => self.sender.send(Action::RefreshMineFmPlay).unwrap(),
         }
         self.reveal();
@@ -516,7 +539,7 @@ impl PlayerWidget {
             LoopsState::TRACK => {
                 self.play();
                 return;
-            }
+            },
         };
         if let Ok(si) = task::block_on(get_player_list_song(PD::FORWARD, shuffle, loops)) {
             self.sender.send(Action::ReadyPlayer(si)).unwrap();
@@ -545,12 +568,12 @@ impl PlayerWidget {
                     self.sender.send(Action::ReadyPlayer(si)).unwrap();
                 }
                 return;
-            }
+            },
             LoopsState::TRACK => {
                 self.stop();
                 self.play();
                 return;
-            }
+            },
             LoopsState::NONE => false,
         };
         if let Ok(si) = task::block_on(get_player_list_song(PD::BACKWARD, state, false)) {
@@ -609,13 +632,13 @@ impl PlayerWidget {
         match loops_status {
             LoopStatus::None => {
                 self.loops.none.set_active(true);
-            }
+            },
             LoopStatus::Track => {
                 self.loops.track.set_active(true);
-            }
+            },
             LoopStatus::Playlist => {
                 self.loops.playlist.set_active(true);
-            }
+            },
         }
     }
 

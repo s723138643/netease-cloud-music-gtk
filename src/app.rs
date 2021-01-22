@@ -81,6 +81,7 @@ pub(crate) enum Action {
     PlayerSubpages,
     PlayerFound,
     PlayerMine,
+    PlayNext,
     Login(String, String),
     Logout,
     ShowNotice(String),
@@ -301,6 +302,7 @@ impl App {
             Action::PlayerSubpages => self.view.play_subpages(),
             Action::PlayerFound => self.view.play_found(),
             Action::PlayerMine => self.view.play_mine(),
+            Action::PlayNext => self.player.forward(),
             Action::QuitMain => unsafe { self.window.destroy() },
             Action::ConfigsSetTray(state) => {
                 task::spawn(async move {

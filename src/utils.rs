@@ -9,7 +9,7 @@ use crate::{
     model::{
         Errors, NCMResult, DATE_DAY, DATE_MONTH, GLOBAL_CONFIGS, ISO_WEEK, LYRICS_PATH, NCM_CACHE, NCM_CONFIG, NCM_DATA,
     },
-    musicapi::model::SongInfo,
+    musicapi::model::{SongInfo, SongUrl},
     widgets::player::LoopsState,
 };
 use async_std::{
@@ -101,43 +101,47 @@ pub(crate) async fn create_player_list(
     play: bool,
     fm: bool,
 ) -> NCMResult<()> {
-    // 提取歌曲 id 列表
-    let song_id_list = list.iter().map(|si| si.id).collect::<Vec<u64>>();
-    // 批量搜索歌曲 URL
-    if let Ok(v) = api.songs_url(&song_id_list, 320).await {
-        // 初始化播放列表
-        let mut player_list: Vec<(SongInfo, bool)> = Vec::new();
-        // 匹配歌曲 URL, 生成播放列表
-        list.iter().for_each(|si| {
-            if let Some(song_url) = v.iter().find(|su| su.id.eq(&si.id)) {
-                player_list.push((
-                    SongInfo {
-                        song_url: song_url.url.to_owned(),
-                        ..si.to_owned()
-                    },
-                    false,
-                ));
-            }
-        });
-        // 播放列表长度
-        let len = player_list.len();
-        // 创建随机播放 id 列表
-        let mut shuffle_list: Vec<i32> = (0..).take(len).collect();
-        shuffle_list.shuffle(&mut thread_rng());
-        // 将播放列表写入数据库
-        if let Ok(buffer) = bincode::serialize(&PlayerListData {
-            player_list: player_list.to_owned(),
-            shuffle_list: shuffle_list.clone(),
-            index: if fm { 0 } else { -1 },
-        }) {
-            let path = format!("{}player_list.db", NCM_DATA.to_string_lossy());
-            fs::write(path, buffer).await?;
+    // 初始化播放列表
+    let mut player_list: Vec<(SongInfo, bool)> = Vec::new();
+    let mut song_urls: Vec<SongUrl> = Vec::new();
+    if list.len() < 20 {
+        // 提取歌曲 id 列表
+        let song_id_list = list.iter().map(|si| si.id).collect::<Vec<u64>>();
+        // 批量搜索歌曲 URL
+        song_urls = match api.songs_url(&song_id_list, 320).await {
+            Ok(v) => v,
+            Err(e) => {
+                warn!("获取播放链接失败，{}", e);
+                song_urls
+            },
+        };
+    }
+    // 匹配歌曲 URL, 生成播放列表
+    list.iter().for_each(|si| {
+        let mut info = si.to_owned();
+        if let Some(song_url) = song_urls.iter().find(|su| su.id.eq(&si.id)) {
+            info.song_url = song_url.url.to_owned()
         }
-        // 如果需要播放
-        if !player_list.is_empty() && play {
-            // 播放歌单
-            sender.send(Action::PlayerOne).unwrap();
-        }
+        player_list.push((info, false));
+    });
+    // 播放列表长度
+    let len = player_list.len();
+    // 创建随机播放 id 列表
+    let mut shuffle_list: Vec<i32> = (0..).take(len).collect();
+    shuffle_list.shuffle(&mut thread_rng());
+    // 将播放列表写入数据库
+    if let Ok(buffer) = bincode::serialize(&PlayerListData {
+        player_list: player_list.to_owned(),
+        shuffle_list: shuffle_list.clone(),
+        index: if fm { 0 } else { -1 },
+    }) {
+        let path = format!("{}player_list.db", NCM_DATA.to_string_lossy());
+        fs::write(path, buffer).await?;
+    }
+    // 如果需要播放
+    if !player_list.is_empty() && play {
+        // 播放歌单
+        sender.send(Action::PlayerOne).unwrap();
     }
     Ok(())
 }
@@ -214,7 +218,7 @@ pub(crate) async fn get_player_list_song(pd: PD, shuffle: bool, loops: bool) -> 
                         return Ok(si.to_owned());
                     }
                 }
-            }
+            },
             // 上一曲
             PD::BACKWARD => {
                 index_new -= 1;
@@ -252,7 +256,7 @@ pub(crate) async fn get_player_list_song(pd: PD, shuffle: bool, loops: bool) -> 
                 if let Some((si, _)) = player_list.get(player_index as usize) {
                     return Ok(si.to_owned());
                 }
-            }
+            },
         }
     }
     Err(Errors::NoneError)
@@ -406,7 +410,7 @@ pub(crate) async fn get_config() -> NCMResult<Configs> {
     if let Ok(buffer) = fs::read(path).await {
         if let Ok(mut conf) = bincode::deserialize::<Configs>(&buffer).map_err(|_| Errors::NoneError) {
             match conf.clear {
-                ClearCached::NONE => {}
+                ClearCached::NONE => {},
                 ClearCached::MONTH(month) => {
                     if month != *DATE_MONTH {
                         // 清理缓存文件
@@ -414,7 +418,7 @@ pub(crate) async fn get_config() -> NCMResult<Configs> {
                         conf.clear = ClearCached::MONTH(*DATE_MONTH);
                         save_config(&conf).await;
                     }
-                }
+                },
                 ClearCached::WEEK(week) => {
                     if week != *ISO_WEEK {
                         // 清理缓存文件
@@ -422,7 +426,7 @@ pub(crate) async fn get_config() -> NCMResult<Configs> {
                         conf.clear = ClearCached::WEEK(*ISO_WEEK);
                         save_config(&conf).await;
                     }
-                }
+                },
                 ClearCached::DAY(day) => {
                     if day != *DATE_DAY {
                         // 清理缓存文件
@@ -430,7 +434,7 @@ pub(crate) async fn get_config() -> NCMResult<Configs> {
                         conf.clear = ClearCached::DAY(*DATE_DAY);
                         save_config(&conf).await;
                     }
-                }
+                },
             }
             return Ok(conf);
         }
